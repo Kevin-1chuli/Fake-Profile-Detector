@@ -5,6 +5,31 @@ from PIL import Image
 import re
 import io
 import matplotlib.pyplot as plt
+from dotenv import load_dotenv
+import os
+import requests
+
+load_dotenv()
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
+
+
+
+def fetch_instagram_profile(username: str):
+    url = f"https://{RAPIDAPI_HOST}/getprofile/{username}"
+
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
+    }
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json()  # profile data
+    else:
+        return {"error": response.text}
+
 
 
 # --- Configure Tesseract if needed ---
@@ -164,35 +189,49 @@ elif mode == "Manual Input":
 # ====================
 # MODE 3: Username/Link Input
 # ====================
+# ====================
+# MODE 3: Username/Link Input
+# ====================
 elif mode == "Username/Link Input":
     st.header("🔗 Test by Username/Link")
+    username_input = st.text_input("Enter a profile username or link")
 
-    username = st.text_input("Enter a profile username or link")
     if st.button("Check Profile"):
-        if username:
-            # Mock profile (replace with real API calls if available)
-            fake_profile = {
-                "username": username,
-                "followers": 10,
-                "following": 500,
-                "posts": 1,
-                "bio_text": "",
-                "profile_pic": "no"
-            }
-
-            score, reasons = score_profile(fake_profile)
-
-            st.subheader(f"Results for {username}")
-            st.write(f"Score: {score}")
-            for reason in reasons:
-                st.write("- " + reason)
-
-            if score >= 4:
-                st.error("🚨 Suspicious account")
+        if username_input:
+            # Clean username if a full URL is pasted
+            if "instagram.com" in username_input:
+                username = username_input.rstrip("/").split("/")[-1].split("?")[0]
             else:
-                st.success("✅ Looks normal")
+                username = username_input
+
+            profile_data = fetch_instagram_profile(username)
+
+            if "error" in profile_data:
+                st.error(f"API Error: {profile_data['error']}")
+            else:
+                profile = {
+                    "username": profile_data.get("username", username),
+                    "followers": profile_data.get("followers", 0),
+                    "following": profile_data.get("following", 0),
+                    "posts": profile_data.get("posts", 0),
+                    "bio_text": profile_data.get("biography", ""),
+                    "profile_pic": "yes" if profile_data.get("profile_pic_url") else "no"
+                }
+
+                score, reasons = score_profile(profile)
+
+                st.subheader(f"Results for {username}")
+                st.write(f"Score: {score}")
+                for reason in reasons:
+                    st.write("- " + reason)
+
+                if score >= 4:
+                    st.error("🚨 Suspicious account")
+                else:
+                    st.success("✅ Looks normal")
         else:
             st.warning("Please enter a username or link")
+
 
 
 # ====================
