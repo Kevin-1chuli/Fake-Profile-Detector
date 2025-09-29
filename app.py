@@ -8,14 +8,23 @@ import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 import os
 import requests
+from shutil import which
 
 load_dotenv()
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 
+DEFAULT_RAPIDAPI_HOST = "instagram-profile1.p.rapidapi.com"
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST") or DEFAULT_RAPIDAPI_HOST
+
+
+def is_api_configured() -> bool:
+    """Returns True if RapidAPI credentials are available."""
+    return bool(RAPIDAPI_KEY)
 
 
 def fetch_instagram_profile(username: str):
+    if not is_api_configured():
+        return {"error": "RAPIDAPI_KEY is not set. Add it to your .env file."}
     url = f"https://{RAPIDAPI_HOST}/getprofile/{username}"
 
     headers = {
@@ -23,17 +32,23 @@ def fetch_instagram_profile(username: str):
         "X-RapidAPI-Host": RAPIDAPI_HOST
     }
 
-    response = requests.get(url, headers=headers)
+    try:
+        response = requests.get(url, headers=headers, timeout=20)
+        if response.status_code == 200:
+            return response.json()  # profile data
+        else:
+            return {"error": response.text}
+    except requests.RequestException as e:
+        return {"error": str(e)}
 
-    if response.status_code == 200:
-        return response.json()  # profile data
-    else:
-        return {"error": response.text}
 
-
-
-# --- Configure Tesseract if needed ---
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# --- Configure Tesseract if available ---
+# Priority:
+# 1) TESSERACT_CMD env var
+# 2) `tesseract` available on PATH
+tesseract_cmd = os.getenv("TESSERACT_CMD") or which("tesseract")
+if tesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
 # --- Fake detection scoring function ---
 def score_profile(profile):
@@ -204,7 +219,14 @@ elif mode == "Username/Link Input":
             else:
                 username = username_input
 
-            profile_data = fetch_instagram_profile(username)
+            if not is_api_configured():
+                st.warning(
+                    "RAPIDAPI_KEY not set. Add it to your .env file (RAPIDAPI_HOST defaults to "
+                    f"`{DEFAULT_RAPIDAPI_HOST}`)."
+                )
+                profile_data = {"error": "Missing API key"}
+            else:
+                profile_data = fetch_instagram_profile(username)
 
             if "error" in profile_data:
                 st.error(f"API Error: {profile_data['error']}")
@@ -246,7 +268,17 @@ elif mode == "Screenshot Upload":
         image = Image.open(uploaded_img)
         st.image(image, caption="Uploaded Profile", use_column_width=True)
 
-        extracted_text = pytesseract.image_to_string(image)
+        # Ensure Tesseract is available before attempting OCR
+        try:
+            if not getattr(pytesseract.pytesseract, "tesseract_cmd", None) and not which("tesseract"):
+                st.warning("Tesseract OCR is not installed or not found in PATH. Install it and/or set TESSERACT_CMD in your .env.")
+                extracted_text = ""
+            else:
+                extracted_text = pytesseract.image_to_string(image)
+        except Exception as e:
+            st.error(f"OCR error: {e}")
+            extracted_text = ""
+
         st.subheader("Extracted Text")
         st.text(extracted_text)
 

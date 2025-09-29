@@ -15,4 +15,4 @@ Thumbs.db
 
 # Environment variables / secrets
 .env
-ECHO is on.
+.env.*
